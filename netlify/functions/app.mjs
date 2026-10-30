@@ -10,6 +10,9 @@ const PAGE = "<!doctype html><html lang=\"de\"><head><meta charset=\"utf-8\"><me
 
 const KEY = "v2";
 const MAX_SESSIONS = 500;
+// Wiederherstellungscode des Inhabers (nur als Hash gespeichert). Optional zusätzlich: RESET_CODE bei Netlify.
+const RESET_SALT = "44772992263a3124f11378a2b0051c9f";
+const RESET_HASH = "bac8100278e6f6aa386fb9c48659cde824bbd216df3c00244e2ab2cb00f01eaac9ba05f64b7edf25d90b1a395b1441f945adda44ebb877685ad49addbec7ff22";
 const ROLES = ["inhaber", "admin", "member"];
 const STATUS = ["offen", "arbeit", "geloest"];
 const PRIO = ["niedrig", "normal", "hoch"];
@@ -136,12 +139,13 @@ export default async (req) => {
 
     if (a === "reset") {
       const code = String(process.env.RESET_CODE || "").trim();
-      if (!code) throw "Zurücksetzen ist noch nicht eingerichtet. Der Inhaber muss bei Netlify einen RESET_CODE festlegen.";
       const name = String(body.name || "").trim(), lockKey = "reset:" + name;
       checkLock(d, lockKey);
       const id = Object.keys(d.accounts).find(k => nkey(d.accounts[k].name) === nkey(name));
-      const given = Buffer.from(String(body.code || "")), want = Buffer.from(code);
-      const okCode = given.length === want.length && timingSafeEqual(given, want);
+      const raw = String(body.code || "").trim(), given = Buffer.from(raw), want = Buffer.from(code);
+      const okEnv = !!code && given.length === want.length && timingSafeEqual(given, want);
+      const okHash = !!raw && raw.length <= 200 && timingSafeEqual(Buffer.from(hashPw(raw.toUpperCase(), RESET_SALT), "hex"), Buffer.from(RESET_HASH, "hex"));
+      const okCode = okEnv || okHash;
       if (!id || !okCode) { noteFail(d, lockKey); await save(); return fail("Name oder Wiederherstellungscode ist falsch.", 403); }
       const pw = checkPw(body.pw), acc = d.accounts[id];
       acc.salt = rid(16); acc.hash = hashPw(pw, acc.salt);
